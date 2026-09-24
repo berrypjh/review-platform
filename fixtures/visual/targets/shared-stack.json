@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "repository": "berrypjh/shared-stack",
+  "viewport": { "width": 1280, "height": 720 },
+  "targets": [
+    {
+      "id": "components-buttons-button--default",
+      "label": "Components/Buttons/Button / Default",
+      "path": "iframe.html?id=components-buttons-button--default&viewMode=story"
+    },
+    {
+      "id": "components-buttons-button--loading",
+      "label": "Components/Buttons/Button / Loading",
+      "path": "iframe.html?id=components-buttons-button--loading&viewMode=story"
+    }
+  ]
+}

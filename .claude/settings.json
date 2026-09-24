@@ -1,0 +1,71 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(.env)",
+      "Read(.env.local)",
+      "Read(.env.*.local)",
+      "Read(*.key)",
+      "Read(*.p8)",
+      "Read(*.p12)",
+      "Read(*.jks)",
+      "Read(*.mobileprovision)",
+      "Bash(*nx submit*)",
+      "Bash(*mobile:submit*)",
+      "Bash(*eas submit*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)"
+    ],
+    "ask": [
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git merge*)",
+      "Bash(git rebase*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean*)",
+      "Bash(git checkout -- *)",
+      "Bash(git restore*)",
+      "Bash(git stash*)",
+      "Bash(git branch -d*)",
+      "Bash(git branch -D*)",
+      "Bash(git tag*)",
+      "Bash(*eas build*)",
+      "Bash(pnpm release:npm*)",
+      "Bash(*nx release*)",
+      "Bash(*npm publish*)",
+      "Bash(pnpm add*)",
+      "Bash(pnpm i)",
+      "Bash(pnpm i *)",
+      "Bash(pnpm install*)",
+      "Bash(pnpm remove*)",
+      "Bash(pnpm update*)",
+      "Bash(*nx add*)",
+      "Bash(*nx migrate*)"
+    ]
+  },
+  "extraKnownMarketplaces": {
+    "berrypjh": {
+      "source": {
+        "source": "github",
+        "repo": "berrypjh/shared-stack"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "code-review@claude-plugins-official": true,
+    "berry-commit@berrypjh": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-bash.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

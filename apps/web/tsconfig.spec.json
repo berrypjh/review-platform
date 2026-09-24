@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declarationMap": false,
+    "tsBuildInfoFile": "dist/tsconfig.spec.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.test.ts"],
+  "exclude": []
+}

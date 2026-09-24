@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "repository": "berrypjh/shared-stack",
+  "viewport": { "width": 32, "height": 20 },
+  "targets": [
+    {
+      "id": "button--primary",
+      "label": "Button / Primary",
+      "path": "iframe.html?id=button--primary&viewMode=story"
+    },
+    {
+      "id": "card--default",
+      "label": "Card / Default",
+      "path": "iframe.html?id=card--default&viewMode=story"
+    }
+  ]
+}

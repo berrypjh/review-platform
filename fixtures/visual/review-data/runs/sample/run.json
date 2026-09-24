@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "sample",
+  "repository": "berrypjh/shared-stack",
+  "baseSha": "7888724e59b35e45880c736f03b4ecf3215f8e78",
+  "headSha": "951cadd",
+  "createdAt": "2026-09-24T12:27:15.715Z",
+  "browser": "chromium",
+  "viewport": {
+    "width": 32,
+    "height": 20
+  },
+  "status": "review-required",
+  "changes": [
+    {
+      "id": "button--primary",
+      "label": "Button / Primary",
+      "targetPath": "iframe.html?id=button--primary&viewMode=story",
+      "status": "unchanged",
+      "baselinePath": "baseline/button--primary.png",
+      "currentPath": "current/button--primary.png",
+      "diffPath": null,
+      "mismatchPixels": 0,
+      "mismatchRatio": 0,
+      "error": null
+    },
+    {
+      "id": "card--default",
+      "label": "Card / Default",
+      "targetPath": "iframe.html?id=card--default&viewMode=story",
+      "status": "changed",
+      "baselinePath": "baseline/card--default.png",
+      "currentPath": "current/card--default.png",
+      "diffPath": "diff/card--default.png",
+      "mismatchPixels": 8,
+      "mismatchRatio": 0.0125,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,209 @@
+# Storybook Visual Regression을 PR에서 실행하는 reusable workflow.
+#
+# 호출 repo(검사 대상)의 PR에서 `workflow_call`로 쓴다. base와 head를 각각 checkout해 Storybook을
+# build·serve하고, review-platform의 capture/compare로 비교한 뒤 run 디렉터리를 artifact로 올린다.
+# 결과 확인은 artifact를 내려받아 로컬 Review UI로 한다. 설정 방법: docs/integration/pr-integration.md
+#
+# `workflow_dispatch`는 review-platform 자체에서 이 workflow를 시험할 때 쓴다 (기본값: shared-stack main vs main).
+name: Visual Regression
+
+on:
+  workflow_call:
+    inputs:
+      manifest:
+        description: VisualTargetManifest JSON 경로 (호출 repo root 기준)
+        required: true
+        type: string
+      storybook-build:
+        description: Storybook static build를 만드는 명령 (호출 repo root에서 실행)
+        required: true
+        type: string
+      storybook-dir:
+        description: build된 Storybook static 디렉터리 (호출 repo root 기준)
+        required: true
+        type: string
+      install:
+        description: 호출 repo의 의존성 설치 명령
+        required: false
+        type: string
+        default: pnpm install --frozen-lockfile
+      fail-on:
+        description: 이 status 이상이면 job 실패 (failed | review-required)
+        required: false
+        type: string
+        default: failed
+      review-platform-ref:
+        description: 사용할 review-platform ref
+        required: false
+        type: string
+        default: main
+    secrets:
+      review-platform-token:
+        description: review-platform이 private일 때 checkout에 쓰는 PAT (contents read). public이면 생략
+        required: false
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 검사 대상 repository (owner/name)
+        required: true
+        default: berrypjh/shared-stack
+      base-ref:
+        required: true
+        default: main
+      head-ref:
+        required: true
+        default: main
+      manifest:
+        description: VisualTargetManifest JSON 경로 (review-platform root 기준)
+        required: true
+        default: fixtures/visual/targets/shared-stack.json
+      storybook-build:
+        required: true
+        default: pnpm build:libs:web && pnpm build-storybook
+      storybook-dir:
+        required: true
+        default: libs/react-ui/storybook-static
+      install:
+        required: false
+        default: pnpm install --frozen-lockfile
+      fail-on:
+        required: false
+        default: failed
+      review-platform-ref:
+        required: false
+        default: main
+
+env:
+  NX_DAEMON: "false"
+  BASE_PORT: "6006"
+  HEAD_PORT: "6007"
+
+jobs:
+  visual:
+    name: Visual regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+      TARGET_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.repository || github.repository }}
+      BASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.base-ref || github.event.pull_request.base.sha }}
+      HEAD_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.head-ref || github.event.pull_request.head.sha }}
+    steps:
+      - name: Require a pull request
+        if: env.IS_DISPATCH != 'true' && github.event.pull_request == null
+        run: |
+          echo "::error::This workflow needs a pull_request event so base and head are known."
+          exit 1
+
+      - name: Checkout review-platform
+        uses: actions/checkout@v7
+        with:
+          repository: berrypjh/review-platform
+          ref: ${{ inputs.review-platform-ref }}
+          path: review-platform
+          # private인 동안은 PAT가 필요하다. public이 되면 caller의 GITHUB_TOKEN으로 충분하다.
+          token: ${{ secrets.review-platform-token || github.token }}
+
+      - name: Checkout base
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.TARGET_REPO }}
+          ref: ${{ env.BASE_REF }}
+          path: base
+
+      - name: Checkout head
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.TARGET_REPO }}
+          ref: ${{ env.HEAD_REF }}
+          path: head
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: review-platform/package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: review-platform/.nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            review-platform/pnpm-lock.yaml
+            base/pnpm-lock.yaml
+            head/pnpm-lock.yaml
+
+      - name: Install review-platform
+        working-directory: review-platform
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Resolve run
+        run: |
+          if [ "$IS_DISPATCH" = "true" ]; then
+            RUN_ID="manual-${{ github.run_number }}"
+            MANIFEST="$GITHUB_WORKSPACE/review-platform/${{ inputs.manifest }}"
+          else
+            RUN_ID="pr-${{ github.event.pull_request.number }}"
+            MANIFEST="$GITHUB_WORKSPACE/head/${{ inputs.manifest }}"
+          fi
+          {
+            echo "RUN_ID=$RUN_ID"
+            echo "MANIFEST=$MANIFEST"
+            echo "BASE_SHA=$(git -C base rev-parse HEAD)"
+            echo "HEAD_SHA=$(git -C head rev-parse HEAD)"
+          } >> "$GITHUB_ENV"
+
+      - name: Build base Storybook
+        working-directory: base
+        run: |
+          ${{ inputs.install }}
+          ${{ inputs.storybook-build }}
+
+      - name: Capture baseline
+        working-directory: review-platform
+        run: |
+          pnpm exec http-server "$GITHUB_WORKSPACE/base/${{ inputs.storybook-dir }}" -a 127.0.0.1 -p "$BASE_PORT" --silent &
+          for i in $(seq 1 30); do curl -sf -o /dev/null "http://127.0.0.1:$BASE_PORT/iframe.html" && break; sleep 1; done
+          pnpm visual:capture -- --run-id "$RUN_ID" --kind baseline --base-url "http://127.0.0.1:$BASE_PORT" --targets "$MANIFEST"
+          kill %1
+
+      - name: Build head Storybook
+        working-directory: head
+        run: |
+          ${{ inputs.install }}
+          ${{ inputs.storybook-build }}
+
+      - name: Capture current
+        working-directory: review-platform
+        run: |
+          pnpm exec http-server "$GITHUB_WORKSPACE/head/${{ inputs.storybook-dir }}" -a 127.0.0.1 -p "$HEAD_PORT" --silent &
+          for i in $(seq 1 30); do curl -sf -o /dev/null "http://127.0.0.1:$HEAD_PORT/iframe.html" && break; sleep 1; done
+          pnpm visual:capture -- --run-id "$RUN_ID" --kind current --base-url "http://127.0.0.1:$HEAD_PORT" --targets "$MANIFEST"
+          kill %1
+
+      - name: Compare
+        working-directory: review-platform
+        run: |
+          pnpm visual:compare -- --run-id "$RUN_ID" --repository "$TARGET_REPO" \
+            --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA" --targets "$MANIFEST"
+
+      # capture나 compare가 중간에 실패해도 찍힌 PNG는 올려서 원인을 볼 수 있게 한다.
+      - name: Upload run artifact
+        if: always() && env.RUN_ID != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-run-${{ env.RUN_ID }}
+          path: review-platform/.review-data
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summary
+        id: summary
+        working-directory: review-platform
+        run: pnpm --silent visual:summary -- --run-id "$RUN_ID" --fail-on "${{ inputs.fail-on }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Warn when review is required
+        if: always() && steps.summary.outputs.status == 'review-required'
+        run: echo "::warning::Visual changes need review. Download artifact visual-run-$RUN_ID and open it with the Review UI (docs/integration/pr-integration.md)."
