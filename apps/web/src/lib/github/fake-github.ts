@@ -1,10 +1,11 @@
 /**
  * 테스트 전용 가짜 GitHub. 테스트가 `Transport`로 직접 주입한다 — 런타임(`runtime.ts`)에는 이것을 고르는 경로가 없다.
- * 요청 형식(App JWT 서명 · token 범위 · Check 상태 값)을 실제 API처럼 검사하고, 장애(timeout · 응답 유실 · status)를 주입할 수 있다.
+ * 요청 형식(App JWT 서명 · token 범위 · commit status 값)을 실제 API처럼 검사하고, 장애(timeout · 응답 유실 · status)를 주입할 수 있다.
  */
 import { createHash, createPublicKey, createVerify, type KeyObject } from 'node:crypto';
 
 import type { Transport } from './http.ts';
+import { STATUS_CONTEXT } from './statuses.ts';
 
 export type FakePull = {
   repositoryId: number;
@@ -16,17 +17,14 @@ export type FakePull = {
   author: string;
 };
 
-export type FakeRun = {
+export type FakeStatus = {
   id: number;
   repositoryId: number;
-  appId: number;
-  name: string;
-  head_sha: string;
-  status: string;
-  conclusion: string | null;
-  external_id: string | null;
-  details_url: string | null;
-  output: { title: string; summary: string } | null;
+  sha: string;
+  state: string;
+  context: string;
+  description: string | null;
+  target_url: string | null;
 };
 
 type FaultMode =
@@ -50,7 +48,8 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 export class FakeGitHub {
   readonly repos = new Map<number, Repo>();
   readonly pulls: FakePull[] = [];
-  readonly runs: FakeRun[] = [];
+  /** 받은 commit status 전부. GitHub처럼 덮어쓰지 않고 쌓인다 — 같은 context는 마지막 것이 보인다. */
+  readonly statuses: FakeStatus[] = [];
   readonly requests: { method: string; path: string }[] = [];
   suspended = false;
   /** `commits/{sha}/pulls` 한 페이지 크기. 페이지네이션 시험용. */
@@ -66,11 +65,10 @@ export class FakeGitHub {
   >();
   private readonly userTokens = new Map<string, { id: number; login: string }>();
   private faults: Fault[] = [];
-  private nextRunId = 9000;
+  private nextStatusId = 9000;
   private nextToken = 1;
 
   constructor(
-    readonly appId: number,
     readonly clientId: string,
     readonly clientSecret: string,
     readonly installationId: number,
@@ -105,8 +103,16 @@ export class FakeGitHub {
     return found;
   }
 
-  ownRuns(sha?: string) {
-    return this.runs.filter((run) => run.appId === this.appId && (!sha || run.head_sha === sha));
+  /** SHA에 쓰인 status 이력(오래된 것부터). */
+  statusesOf(sha: string) {
+    return this.statuses.filter((status) => status.sha === sha);
+  }
+
+  /** SHA에서 PR 화면에 보이는 status — 같은 context의 마지막 값. */
+  latestStatus(sha: string, context = STATUS_CONTEXT): FakeStatus | undefined {
+    return this.statusesOf(sha)
+      .filter((status) => status.context === context)
+      .at(-1);
   }
 
   /** 다음 `times`번의 일치하는 요청에 장애를 넣는다. */
@@ -210,27 +216,9 @@ export class FakeGitHub {
         this.commitPullsPerPage,
       );
     }
-    match = rest.match(/^\/commits\/([0-9a-f]{40})\/check-runs$/);
-    if (match && method === 'GET') {
-      const name = url.searchParams.get('check_name');
-      const appId = url.searchParams.get('app_id');
-      const head = match[1];
-      const runs = this.runs.filter(
-        (run) =>
-          run.repositoryId === repo.id &&
-          run.head_sha === head &&
-          (!name || run.name === name) &&
-          (!appId || run.appId === Number(appId)),
-      );
-      return json(200, {
-        total_count: runs.length,
-        check_runs: runs.map((run) => this.runJson(run)),
-      });
-    }
-    if (rest === '/check-runs' && method === 'POST')
-      return this.createRun(repo, await request.json());
-    match = rest.match(/^\/check-runs\/(\d+)$/);
-    if (match && method === 'PATCH') return this.updateRun(Number(match[1]), await request.json());
+    match = rest.match(/^\/statuses\/([0-9a-f]{40})$/);
+    if (match && method === 'POST')
+      return this.createStatus(repo, String(match[1]), await request.json());
     return json(404, { message: 'Not Found' });
   }
 
@@ -261,7 +249,7 @@ export class FakeGitHub {
       });
     }
     const wanted = JSON.stringify(body.permissions);
-    if (wanted !== JSON.stringify({ checks: 'write', pull_requests: 'read', metadata: 'read' })) {
+    if (wanted !== JSON.stringify({ statuses: 'write', pull_requests: 'read', metadata: 'read' })) {
       return json(422, { message: 'Unexpected permissions' });
     }
     const token = `ghs_fake_${this.nextToken++}`;
@@ -290,41 +278,24 @@ export class FakeGitHub {
     );
   }
 
-  private createRun(repo: Repo, body: Record<string, unknown>) {
-    if (!['queued', 'in_progress', 'completed'].includes(String(body['status']))) {
-      return json(422, { message: 'Invalid status for an app' });
-    }
-    if (body['status'] === 'completed' && !body['conclusion'])
-      return json(422, { message: 'conclusion required' });
-    const run: FakeRun = {
-      id: this.nextRunId++,
+  private createStatus(repo: Repo, sha: string, body: Record<string, unknown>) {
+    const description = (body['description'] as string | undefined) ?? null;
+    if (!['error', 'failure', 'pending', 'success'].includes(String(body['state'])))
+      return json(422, { message: 'Validation Failed' });
+    if (description !== null && description.length > 140)
+      return json(422, { message: 'description is too long (maximum is 140 characters)' });
+    const status: FakeStatus = {
+      id: this.nextStatusId++,
       repositoryId: repo.id,
-      appId: this.appId,
-      name: String(body['name']),
-      head_sha: String(body['head_sha']),
-      status: String(body['status']),
-      conclusion: (body['conclusion'] as string | undefined) ?? null,
-      external_id: (body['external_id'] as string | undefined) ?? null,
-      details_url: (body['details_url'] as string | undefined) ?? null,
-      output: (body['output'] as FakeRun['output']) ?? null,
+      sha,
+      state: String(body['state']),
+      context: (body['context'] as string | undefined) ?? 'default',
+      description,
+      target_url: (body['target_url'] as string | undefined) ?? null,
     };
-    this.runs.push(run);
-    return json(201, this.runJson(run));
-  }
-
-  private updateRun(id: number, body: Record<string, unknown>) {
-    const run = this.runs.find((candidate) => candidate.id === id);
-    if (!run) return json(404, { message: 'Not Found' });
-    if (run.appId !== this.appId)
-      return json(403, { message: 'Resource not accessible by integration' });
-    if (body['conclusion']) {
-      run.status = 'completed';
-      run.conclusion = String(body['conclusion']);
-    } else if (body['status']) {
-      run.status = String(body['status']);
-    }
-    if (body['output']) run.output = body['output'] as FakeRun['output'];
-    return json(200, this.runJson(run));
+    this.statuses.push(status);
+    const { id, state, context, target_url } = status;
+    return json(201, { id, state, context, description, target_url });
   }
 
   private exchange(form: URLSearchParams) {
@@ -361,20 +332,6 @@ export class FakeGitHub {
       user: { login: pull.author },
       head: { sha: pull.headSha, repo: { id: 999_999, name: 'fork' } },
       base: { repo: this.repoJson(base) },
-    };
-  }
-
-  private runJson(run: FakeRun) {
-    return {
-      id: run.id,
-      name: run.name,
-      head_sha: run.head_sha,
-      status: run.status,
-      conclusion: run.conclusion,
-      external_id: run.external_id,
-      details_url: run.details_url,
-      app: { id: run.appId },
-      pull_requests: [],
     };
   }
 }

@@ -58,7 +58,7 @@ async function markSync(key: { repositoryId: number; number: number }, result: S
     for (const revision of await listRevisionsToSync(sql, snapshot.pullRequest.id)) {
       const outcome =
         result === 'synced'
-          ? { state: 'synced' as const, checkRunId: 700_000 + revision.id }
+          ? { state: 'synced' as const }
           : { state: result, error: `E2E seeded ${result}` };
       await recordSyncResult(sql, claim, revision.id, revision.version, outcome);
     }

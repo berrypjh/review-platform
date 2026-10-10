@@ -18,7 +18,7 @@ const RESERVE_MS = 5_000;
 const UNSYNCED_BATCH = 10;
 
 /**
- * PR 하나를 복구한다. GitHub에서 다시 읽은 값(`observed`가 있으면 그것)을 반영하고 반영되지 않은 Check를 맞춘다.
+ * PR 하나를 복구한다. GitHub에서 다시 읽은 값(`observed`가 있으면 그것)을 반영하고 반영되지 않은 commit status를 맞춘다.
  * DB에 없는 PR은 `repository`가 있어야 한다(bootstrap).
  */
 export async function reconcilePullRequest(

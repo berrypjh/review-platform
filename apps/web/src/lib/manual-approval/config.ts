@@ -4,9 +4,7 @@ import { ConfigurationError } from '../db/config.ts';
 
 /** GitHub App · 로그인 · 공개 URL 설정. 서버에서만 읽는다. 값은 오류 · 로그에 넣지 않는다. */
 export type ManualApprovalConfig = {
-  /** `app_id` 필터 · Check 소유 확인용 numeric App ID. */
-  appId: number;
-  /** OAuth web flow와 App JWT의 `iss`(GitHub 권장)에 쓰는 client ID. App ID와 다르다. */
+  /** OAuth web flow와 App JWT의 `iss`(GitHub 권장)에 쓰는 client ID. */
   clientId: string;
   clientSecret: string;
   privateKey: KeyObject;
@@ -14,7 +12,7 @@ export type ManualApprovalConfig = {
   installationId: number;
   allowedRepositoryIds: ReadonlySet<number>;
   approverIds: ReadonlySet<number>;
-  /** `https://host` — Check `details_url` · OAuth callback · POST Origin 비교 기준. 끝 `/` 없음. */
+  /** `https://host` — commit status `target_url` · OAuth callback · POST Origin 비교 기준. 끝 `/` 없음. */
   publicBaseUrl: string;
 };
 
@@ -74,7 +72,6 @@ function publicBaseUrl(env: Env): string {
 /** 승인 경로의 설정을 읽는다. 하나라도 없거나 잘못되면 `ConfigurationError` — 일부 설정으로 동작하지 않는다. */
 export function readManualApprovalConfig(env: Env = process.env): ManualApprovalConfig {
   return {
-    appId: positiveInt(env, 'GITHUB_APP_ID'),
     clientId: required(env, 'GITHUB_APP_CLIENT_ID'),
     clientSecret: required(env, 'GITHUB_APP_CLIENT_SECRET'),
     privateKey: privateKey(env),

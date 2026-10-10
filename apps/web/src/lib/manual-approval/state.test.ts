@@ -46,7 +46,6 @@ const pendingRevision = (overrides: Partial<RevisionRecord> = {}): RevisionRecor
     approverId: null,
     approverLogin: null,
     decisionAt: null,
-    checkRunId: null,
     syncState: 'pending',
     lastError: null,
     lastSyncedAt: null,
@@ -201,7 +200,7 @@ describe('approvalStatus', () => {
 });
 
 describe('syncIntent', () => {
-  it('starts a new head with a queued check intent', () => {
+  it('starts a new head with a queued status intent', () => {
     expect(syncIntent(snapshot())).toEqual({
       key: { repositoryId: 101, number: 7 },
       revisionId: 1,
@@ -209,8 +208,6 @@ describe('syncIntent', () => {
       generation: 1,
       headSha: SHA_A,
       desired: 'queued',
-      checkRunId: null,
-      externalId: 'rp:101:7:1',
     });
   });
 

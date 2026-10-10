@@ -5,7 +5,7 @@ export const HeadShaSchema = z
   .string()
   .regex(/^[0-9a-f]{40}$/, 'Expected a 40-character lowercase SHA');
 
-/** GitHub numeric ID(저장소 · installation · 사용자 · check run). 이름 대신 이것으로 판정한다. */
+/** GitHub numeric ID(저장소 · installation · 사용자). 이름 대신 이것으로 판정한다. */
 export const GitHubIdSchema = z.int().positive();
 
 export const PullRequestStateSchema = z.enum(['open', 'closed', 'merged']);
@@ -65,7 +65,6 @@ const revisionBase = {
   pullRequestId: z.int().positive(),
   generation: z.int().positive(),
   headSha: HeadShaSchema,
-  checkRunId: GitHubIdSchema.nullable(),
   syncState: SyncStateSchema,
   lastError: z.string().nullable(),
   lastSyncedAt: z.date().nullable(),
@@ -78,7 +77,7 @@ export const RevisionRecordSchema = z.discriminatedUnion('decision', [
   z.strictObject({
     ...revisionBase,
     decision: z.literal('pending'),
-    // cancelled — 현재가 아니게 된(새 HEAD · close · merge) 미승인 revision의 대기 Check를 닫는다
+    // cancelled — 현재가 아니게 된(새 HEAD · close · merge) 미승인 revision의 대기 status를 닫는다
     desiredCheckState: z.enum(['queued', 'cancelled']),
     approverId: z.null(),
     approverLogin: z.null(),

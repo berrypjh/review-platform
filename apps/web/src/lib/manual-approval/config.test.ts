@@ -10,7 +10,6 @@ const pem = generateKeyPairSync('rsa', { modulusLength: 2048 })
   .toString();
 
 const env = (overrides: Record<string, string | undefined> = {}) => ({
-  GITHUB_APP_ID: '77',
   GITHUB_APP_CLIENT_ID: 'Iv1.testclient',
   GITHUB_APP_CLIENT_SECRET: 'client-secret-value',
   GITHUB_APP_PRIVATE_KEY: pem,
@@ -23,9 +22,8 @@ const env = (overrides: Record<string, string | undefined> = {}) => ({
 });
 
 describe('readManualApprovalConfig', () => {
-  it('reads numeric IDs and keeps App ID and client ID apart', () => {
+  it('reads numeric IDs and the client ID', () => {
     const config = readManualApprovalConfig(env());
-    expect(config.appId).toBe(77);
     expect(config.clientId).toBe('Iv1.testclient');
     expect([...config.allowedRepositoryIds]).toEqual([101, 102, 103]);
     expect(config.publicBaseUrl).toBe('https://review.example');

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { hashToken } from '../auth/session.ts';
 import { createSession, findSession } from '../auth/store.ts';
-import { openTestDatabase, present, type TestDatabase } from '../db/test-database.ts';
-import { CHECK_NAME, MANUAL_ONLY_NOTICE } from '../github/checks.ts';
+import { openTestDatabase, type TestDatabase } from '../db/test-database.ts';
+import { MANUAL_ONLY_NOTICE, STATUS_CONTEXT } from '../github/statuses.ts';
 import { loadSnapshot } from './repository.ts';
 import { approvalStatus } from './state.ts';
 import {
@@ -41,6 +41,8 @@ const snapshot = async () => {
   if (!found) throw new Error('PR is not stored');
   return found;
 };
+const shown = (sha: string) => h.github.latestStatus(sha)?.state;
+const STATUS_POST = /\/statuses\/[0-9a-f]{40}$/;
 const deliveryStatus = async (deliveryId: string) =>
   (
     await db.sql<
@@ -49,22 +51,20 @@ const deliveryStatus = async (deliveryId: string) =>
   )[0]?.status;
 
 describe('pull_request webhooks', () => {
-  it('registers a new PR and creates exactly one queued check on its head', async () => {
+  it('registers a new PR and sets exactly one pending status on its head', async () => {
     h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
     expect(await prEvent('opened')).toEqual({ status: 200, result: 'processed' });
 
-    const [run, ...rest] = h.github.ownRuns(A);
+    const [status, ...rest] = h.github.statusesOf(A);
     expect(rest).toEqual([]);
-    expect(run).toMatchObject({
-      name: CHECK_NAME,
-      status: 'queued',
-      conclusion: null,
-      external_id: 'rp:101:7:1',
-      details_url: 'https://review.example/pulls/101/7',
+    expect(status).toMatchObject({
+      context: STATUS_CONTEXT,
+      state: 'pending',
+      target_url: 'https://review.example/pulls/101/7',
     });
-    expect(run?.output?.summary).toContain(MANUAL_ONLY_NOTICE);
+    expect(status?.description).toContain(MANUAL_ONLY_NOTICE);
     const stored = await snapshot();
-    expect(stored.revision).toMatchObject({ checkRunId: run?.id, syncState: 'synced' });
+    expect(stored.revision?.syncState).toBe('synced');
     expect(approvalStatus(stored)).toBe('pending');
   });
 
@@ -94,7 +94,7 @@ describe('pull_request webhooks', () => {
       result: 'duplicate',
     });
     expect(h.github.requests.length).toBe(callsBefore);
-    expect(h.github.ownRuns(A)).toHaveLength(1);
+    expect(h.github.statusesOf(A)).toHaveLength(1);
   });
 
   it('ignores repositories outside the allowlist and foreign installations', async () => {
@@ -104,7 +104,7 @@ describe('pull_request webhooks', () => {
     );
     expect((await prEvent('opened', { installationId: 6 })).result).toBe('ignored');
     expect(await db.sql`SELECT 1 FROM pull_requests`).toHaveLength(0);
-    expect(h.github.runs).toEqual([]);
+    expect(h.github.statuses).toEqual([]);
   });
 
   it('reads the current head from GitHub instead of a late payload', async () => {
@@ -118,60 +118,53 @@ describe('pull_request webhooks', () => {
     expect(stored.revision?.generation).toBe(2);
   });
 
-  it('records the check on the base repository for a fork PR', async () => {
+  it('records the status on the base repository for a fork PR', async () => {
     h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
     expect((await prEvent('opened', { fork: true })).result).toBe('processed');
-    expect(h.github.ownRuns(A).map((run) => run.repositoryId)).toEqual([SHARED_STACK.id]);
+    expect(h.github.statusesOf(A).map((status) => status.repositoryId)).toEqual([SHARED_STACK.id]);
   });
 
-  it('cancels the old head check on push and queues the new head', async () => {
+  it('closes the old head status on push and sets the new head pending', async () => {
     const pull = h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
     await prEvent('opened');
     pull.headSha = B;
     await prEvent('synchronize');
-    expect(h.github.ownRuns(A)).toMatchObject([{ status: 'completed', conclusion: 'cancelled' }]);
-    expect(h.github.ownRuns(B)).toMatchObject([{ status: 'queued', conclusion: null }]);
+    expect(shown(A)).toBe('error');
+    expect(shown(B)).toBe('pending');
   });
 
-  it('cancels the waiting check when the PR closes and keeps the history', async () => {
+  it('closes the waiting status when the PR closes and keeps the history', async () => {
     const pull = h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
     await prEvent('opened');
     pull.state = 'closed';
     await prEvent('closed');
-    expect(h.github.ownRuns(A)).toMatchObject([{ conclusion: 'cancelled' }]);
+    expect(shown(A)).toBe('error');
     expect(approvalStatus(await snapshot())).toBe('closed');
   });
 });
 
-describe('checks of other apps', () => {
-  it('never adopts or modifies a check run created by another app', async () => {
+describe('statuses of other contexts', () => {
+  it('never modifies a status of another context on the same commit', async () => {
     h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
-    h.github.runs.push({
+    h.github.statuses.push({
       id: 1,
       repositoryId: SHARED_STACK.id,
-      appId: 15368,
-      name: CHECK_NAME,
-      head_sha: A,
-      status: 'queued',
-      conclusion: null,
-      external_id: 'rp:101:7:1',
-      details_url: null,
-      output: null,
+      sha: A,
+      state: 'failure',
+      context: 'CI / checks',
+      description: null,
+      target_url: null,
     });
     await prEvent('opened');
-    expect(h.github.runs.find((run) => run.id === 1)).toMatchObject({
-      status: 'queued',
-      appId: 15368,
-    });
-    expect(h.github.ownRuns(A)).toHaveLength(1);
-    expect((await snapshot()).revision?.checkRunId).not.toBe(1);
+    expect(h.github.latestStatus(A, 'CI / checks')).toMatchObject({ id: 1, state: 'failure' });
+    expect(shown(A)).toBe('pending');
   });
 });
 
 describe('webhook failures', () => {
   it('leaves a failed delivery and a non-2xx when GitHub fails, then recovers on redelivery', async () => {
     h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
-    h.github.fail('POST', /\/check-runs$/, { kind: 'status', status: 502 });
+    h.github.fail('POST', STATUS_POST, { kind: 'status', status: 502 });
     const payload = pullRequestPayload(SHARED_STACK, 7, 'opened');
     expect(await send('pull_request', payload, 'retry-me')).toEqual({
       status: 503,
@@ -184,37 +177,26 @@ describe('webhook failures', () => {
       status: 200,
       result: 'processed',
     });
-    expect(h.github.ownRuns(A)).toHaveLength(1);
+    expect(h.github.statusesOf(A)).toHaveLength(1);
   });
 
-  it('adopts the check created by a lost POST response instead of creating a duplicate', async () => {
+  it('re-sends the status after a lost POST response and records it as synced', async () => {
     h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
-    h.github.fail('POST', /\/check-runs$/, { kind: 'lose-response' });
+    h.github.fail('POST', STATUS_POST, { kind: 'lose-response' });
     const payload = pullRequestPayload(SHARED_STACK, 7, 'opened');
     expect((await send('pull_request', payload, 'lost')).status).toBe(503);
-    expect(h.github.ownRuns(A)).toHaveLength(1);
+    expect((await snapshot()).revision?.syncState).toBe('unknown');
 
     expect((await send('pull_request', payload, 'lost')).result).toBe('processed');
-    const runs = h.github.ownRuns(A);
-    expect(runs).toHaveLength(1);
-    expect((await snapshot()).revision?.checkRunId).toBe(runs[0]?.id);
-  });
-
-  it('keeps the lowest duplicate run as canonical and cancels the others', async () => {
-    h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
-    h.github.fail('POST', /\/check-runs$/, { kind: 'lose-response' });
-    await prEvent('opened');
-    h.github.runs.push({ ...present(h.github.ownRuns(A)[0]), id: 99_999 });
-    await prEvent('edited');
-    expect((await snapshot()).revision?.checkRunId).toBe(h.github.ownRuns(A)[0]?.id);
-    expect(h.github.runs.find((run) => run.id === 99_999)).toMatchObject({
-      conclusion: 'cancelled',
-    });
+    // 같은 context에 다시 쓴다. 보이는 상태는 pending 하나다.
+    expect(h.github.statusesOf(A)).toHaveLength(2);
+    expect(shown(A)).toBe('pending');
+    expect((await snapshot()).revision?.syncState).toBe('synced');
   });
 
   it('times out inside the webhook budget and records the outcome as unknown', async () => {
     h.github.addPull({ repositoryId: SHARED_STACK.id, number: 7, headSha: A });
-    h.github.fail('POST', /\/check-runs$/, { kind: 'timeout' });
+    h.github.fail('POST', STATUS_POST, { kind: 'timeout' });
     const started = Date.now();
     const result = await handleWebhook(
       h.deps(1_500),

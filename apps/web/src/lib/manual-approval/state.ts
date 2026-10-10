@@ -22,7 +22,7 @@ export function needsNewRevision(current: Snapshot | null, observed: ObservedPul
 
 /**
  * 관측 뒤 지금의 active revision이 현재가 아니게 되는가(새 revision이 열리거나 PR이 닫힘).
- * 아직 승인되지 않았고 대기 Check를 둔 revision만 해당한다 — 그 Check를 cancelled로 닫는다. 승인 이력은 그대로 둔다.
+ * 아직 승인되지 않은 대기 revision만 해당한다 — 그 commit의 status를 닫는다(cancelled 의도). 승인 이력은 그대로 둔다.
  */
 export function becomesObsolete(current: Snapshot | null, observed: ObservedPullRequest): boolean {
   const revision = current?.revision;
@@ -109,7 +109,7 @@ export function approvalStatus({ pullRequest, revision }: Snapshot): ApprovalSta
 export const canApprove = (current: Snapshot) =>
   approvalStatus(current) === 'pending' && current.revision !== null;
 
-/** GitHub에 반영해야 할 상태. 이미 synced면 null이다. GitHub adapter가 이것을 받아 Check를 만들거나 고친다. */
+/** GitHub에 반영해야 할 상태. 이미 synced면 null이다. GitHub adapter가 이것을 받아 commit status를 쓴다. */
 export type SyncIntent = {
   key: PullRequestKey;
   revisionId: number;
@@ -117,8 +117,6 @@ export type SyncIntent = {
   generation: number;
   headSha: string;
   desired: RevisionRecord['desiredCheckState'];
-  checkRunId: number | null;
-  externalId: string;
 };
 
 /** revision 하나의 반영 의도. active가 아닌(cancelled로 닫을) revision도 여기로 들어온다. */
@@ -134,15 +132,9 @@ export function revisionSyncIntent(
     generation: revision.generation,
     headSha: revision.headSha,
     desired: revision.desiredCheckState,
-    checkRunId: revision.checkRunId,
-    externalId: checkRunExternalId(pullRequest, revision.generation),
   };
 }
 
 /** active revision의 반영 의도. */
 export const syncIntent = ({ pullRequest, revision }: Snapshot) =>
   revision ? revisionSyncIntent(pullRequest, revision) : null;
-
-/** Check의 external_id. GitHub이 유일성을 보장하지 않으므로 조회용 표식으로만 쓴다. */
-export const checkRunExternalId = (key: PullRequestKey, generation: number) =>
-  `rp:${key.repositoryId}:${key.number}:${generation}`;

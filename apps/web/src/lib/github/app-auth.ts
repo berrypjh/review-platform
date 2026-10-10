@@ -22,7 +22,7 @@ export function createAppJwt(clientId: string, privateKey: KeyObject, now = new 
 
 /** installation token에 요청하는 권한. App이 받은 권한보다 넓게 요청하지 않는다. */
 export const TOKEN_PERMISSIONS = {
-  checks: 'write',
+  statuses: 'write',
   pull_requests: 'read',
   metadata: 'read',
 } as const;

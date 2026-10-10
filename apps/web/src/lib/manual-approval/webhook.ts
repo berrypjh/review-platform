@@ -123,7 +123,7 @@ async function dispatch(deps: ApprovalDeps, event: WebhookEvent): Promise<'proce
   }
 }
 
-/** claim을 잡은 뒤 GitHub에서 PR을 다시 읽어 반영하고 Check를 맞춘다. 하나라도 반영되지 않으면 던진다. */
+/** claim을 잡은 뒤 GitHub에서 PR을 다시 읽어 반영하고 commit status를 맞춘다. 하나라도 반영되지 않으면 던진다. */
 async function observeAndSync(
   deps: ApprovalDeps,
   repository: { repositoryId: number; owner: string; name: string },

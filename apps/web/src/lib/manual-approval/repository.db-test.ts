@@ -69,13 +69,10 @@ async function approve(expectedHeadSha: string, expectedRevision: number, approv
   }
 }
 
-async function sync(revisionVersion: number, revisionId: number, checkRunId = 5001) {
+async function sync(revisionVersion: number, revisionId: number) {
   const claim = present(await claimPullRequest(db.sql, KEY, 10_000));
   try {
-    return await recordSyncResult(db.sql, claim, revisionId, revisionVersion, {
-      state: 'synced',
-      checkRunId,
-    });
+    return await recordSyncResult(db.sql, claim, revisionId, revisionVersion, { state: 'synced' });
   } finally {
     await releaseClaim(db.sql, claim);
   }
@@ -92,7 +89,7 @@ describe('observation', () => {
       syncState: 'pending',
     });
     expect(approvalStatus(snapshot)).toBe('pending');
-    expect(syncIntent(snapshot)).toMatchObject({ desired: 'queued', externalId: 'rp:101:7:1' });
+    expect(syncIntent(snapshot)).toMatchObject({ desired: 'queued' });
   });
 
   it('does not bump the generation or version when the same event is processed twice', async () => {
@@ -270,7 +267,6 @@ describe('sync results', () => {
     expect(await sync(current.version, current.id)).toBe('recorded');
     const snapshot = present(await loadSnapshot(db.sql, KEY));
     expect(approvalStatus(snapshot)).toBe('approved');
-    expect(snapshot.revision?.checkRunId).toBe(5001);
   });
 
   it('never reports approved for an error or unknown result', async () => {

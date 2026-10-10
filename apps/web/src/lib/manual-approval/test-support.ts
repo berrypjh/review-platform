@@ -19,7 +19,6 @@ export const sha = (char: string) => char.repeat(40);
 
 export function testConfig(overrides: Partial<ManualApprovalConfig> = {}): ManualApprovalConfig {
   return {
-    appId: 77,
     clientId: 'Iv1.testclient',
     clientSecret: 'client-secret-value',
     privateKey,
@@ -34,7 +33,6 @@ export function testConfig(overrides: Partial<ManualApprovalConfig> = {}): Manua
 
 export function testHarness(sql: Db, config = testConfig()) {
   const github = new FakeGitHub(
-    config.appId,
     config.clientId,
     config.clientSecret,
     config.installationId,

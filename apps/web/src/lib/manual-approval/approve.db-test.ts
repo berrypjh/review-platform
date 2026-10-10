@@ -63,15 +63,20 @@ const snapshot = async () => {
   if (!found) throw new Error('PR is not stored');
   return found;
 };
-const successRuns = () => h.github.ownRuns().filter((run) => run.conclusion === 'success');
+/** PR 화면에 보이는 이 context의 status 상태. */
+const shown = (sha: string) => h.github.latestStatus(sha)?.state;
+const successPosts = () => h.github.statuses.filter((status) => status.state === 'success');
+const STATUS_POST = /\/statuses\/[0-9a-f]{40}$/;
 
 describe('approval', () => {
-  it('approves the current head and marks only that check success', async () => {
+  it('approves the current head and marks only that commit success', async () => {
     await openPull();
     const outcome = await approve(A, 1);
     expect(outcome.kind).toBe('approved');
-    expect(h.github.ownRuns(A)).toMatchObject([{ status: 'completed', conclusion: 'success' }]);
-    expect(h.github.ownRuns(A)[0]?.output?.summary).toContain('Approved by @operator');
+    expect(h.github.latestStatus(A)).toMatchObject({
+      state: 'success',
+      description: expect.stringContaining('Approved by @operator'),
+    });
     expect((await snapshot()).revision).toMatchObject({
       decision: 'approved',
       syncState: 'synced',
@@ -82,9 +87,9 @@ describe('approval', () => {
     const pull = await openPull();
     pull.headSha = B;
     expect(await approve(A, 1)).toEqual({ kind: 'conflict', reason: 'revision-changed' });
-    expect(successRuns()).toEqual([]);
-    expect(h.github.ownRuns(B)).toMatchObject([{ status: 'queued' }]);
-    expect(h.github.ownRuns(A)).toMatchObject([{ conclusion: 'cancelled' }]);
+    expect(successPosts()).toEqual([]);
+    expect(shown(B)).toBe('pending');
+    expect(shown(A)).toBe('error');
   });
 
   it('keeps the first decision when the same revision is approved twice', async () => {
@@ -101,20 +106,20 @@ describe('approval', () => {
       approverId: 42,
       approverLogin: 'operator',
     });
-    expect(successRuns()).toHaveLength(1);
+    expect(successPosts()).toHaveLength(1);
   });
 
   it('does not carry an approval to a head pushed during the approval', async () => {
     const pull = await openPull();
-    h.github.beforeRequest = (method) => {
-      if (method === 'PATCH') pull.headSha = B;
+    h.github.beforeRequest = (method, path) => {
+      if (method === 'POST' && STATUS_POST.test(path)) pull.headSha = B;
     };
     expect(await approve(A, 1)).toEqual({
       kind: 'conflict',
       reason: 'head-changed-after-approval',
     });
-    expect(h.github.ownRuns(A)).toMatchObject([{ conclusion: 'success' }]);
-    expect(h.github.ownRuns(B)).toMatchObject([{ status: 'queued', conclusion: null }]);
+    expect(shown(A)).toBe('success');
+    expect(shown(B)).toBe('pending');
     const stored = await snapshot();
     expect(stored.revision).toMatchObject({ generation: 2, headSha: B, decision: 'pending' });
     expect(approvalStatus(stored)).toBe('pending');
@@ -124,7 +129,7 @@ describe('approval', () => {
     await openPull(7, A);
     await openPull(8, A);
     expect(await approve(A, 1)).toEqual({ kind: 'conflict', reason: 'shared-head' });
-    expect(successRuns()).toEqual([]);
+    expect(successPosts()).toEqual([]);
   });
 
   it('refuses when it cannot read every page of PRs sharing the head', async () => {
@@ -134,7 +139,7 @@ describe('approval', () => {
     }
     h.github.commitPullsPerPage = 1;
     expect(await approve(A, 1)).toEqual({ kind: 'conflict', reason: 'shared-head-unknown' });
-    expect(successRuns()).toEqual([]);
+    expect(successPosts()).toEqual([]);
   });
 
   it('refuses a closed PR and a repository outside the allowlist', async () => {
@@ -160,9 +165,9 @@ describe('approval', () => {
 });
 
 describe('approval recovery', () => {
-  it('does not report approved after a PATCH timeout, and reconcile converges to one success', async () => {
+  it('does not report approved after a status timeout, and reconcile converges to success', async () => {
     await openPull();
-    h.github.fail('PATCH', /\/check-runs\/\d+$/, { kind: 'timeout' });
+    h.github.fail('POST', STATUS_POST, { kind: 'timeout' });
     await expect(approve(A, 1, 1_500)).rejects.toBeInstanceOf(GitHubApiError);
     const pending = await snapshot();
     expect(pending.revision).toMatchObject({ decision: 'approved', syncState: 'unknown' });
@@ -170,28 +175,29 @@ describe('approval recovery', () => {
 
     expect(await reconcilePullRequest(h.deps(), KEY)).toBe('synced');
     expect(approvalStatus(await snapshot())).toBe('approved');
-    expect(h.github.ownRuns(A)).toMatchObject([{ conclusion: 'success' }]);
+    expect(shown(A)).toBe('success');
   });
 
   it('does not report approved when GitHub succeeds but the DB result is lost', async () => {
     await openPull();
-    h.github.beforeRequest = async (method) => {
-      if (method === 'PATCH')
+    h.github.beforeRequest = async (method, path) => {
+      if (method === 'POST' && STATUS_POST.test(path))
         await db.sql`UPDATE pull_request_claims SET lease_until = now() - interval '1 second'`;
     };
     await expect(approve(A, 1)).rejects.toMatchObject({ name: 'ClaimLostError' });
-    expect(successRuns()).toHaveLength(1);
+    expect(shown(A)).toBe('success');
     expect(approvalStatus(await snapshot())).toBe('syncing');
 
     h.github.beforeRequest = null;
     expect(await reconcilePullRequest(h.deps(), KEY)).toBe('synced');
     expect(approvalStatus(await snapshot())).toBe('approved');
-    expect(successRuns()).toHaveLength(1);
+    // 같은 의도를 다시 보낸다. 보이는 상태는 여전히 success 하나다.
+    expect(shown(A)).toBe('success');
   });
 
   it('retries a failed approval without creating a second decision', async () => {
     await openPull();
-    h.github.fail('PATCH', /\/check-runs\/\d+$/, { kind: 'status', status: 500 });
+    h.github.fail('POST', STATUS_POST, { kind: 'status', status: 500 });
     const first = await approve(A, 1);
     expect(first.kind).toBe('not-confirmed');
     const decidedAt = (await snapshot()).revision?.decisionAt;
@@ -212,13 +218,8 @@ describe('reconcile', () => {
 
     const report = await reconcile(h.deps(30_000), null);
     expect(report).toEqual({ processed: 3, notSynced: [], cursor: null });
-    expect(
-      h.github
-        .ownRuns()
-        .map((run) => run.head_sha)
-        .sort(),
-    ).toEqual([A, B, sha('c')]);
-    expect(h.github.ownRuns().every((run) => run.status === 'queued')).toBe(true);
+    expect(h.github.statuses.map((status) => status.sha).sort()).toEqual([A, B, sha('c')]);
+    expect(h.github.statuses.every((status) => status.state === 'pending')).toBe(true);
   });
 
   it('returns a continuation cursor instead of running past the deadline', async () => {

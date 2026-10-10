@@ -39,7 +39,7 @@ const PULL_REQUEST_COLUMNS = `
 const REVISION_COLUMNS = `
   id, pull_request_id AS "pullRequestId", generation, head_sha AS "headSha", decision,
   approver_id AS "approverId", approver_login AS "approverLogin", decision_at AS "decisionAt",
-  desired_check_state AS "desiredCheckState", check_run_id AS "checkRunId", sync_state AS "syncState",
+  desired_check_state AS "desiredCheckState", sync_state AS "syncState",
   last_error AS "lastError", last_synced_at AS "lastSyncedAt", version, created_at AS "createdAt"`;
 
 const toPullRequest = (row: unknown): PullRequestRecord => PullRequestRecordSchema.parse(row);
@@ -261,9 +261,7 @@ export function recordApproval(
   });
 }
 
-export type SyncOutcome =
-  | { state: 'synced'; checkRunId: number | null }
-  | { state: 'error' | 'unknown'; error: string; checkRunId?: number };
+export type SyncOutcome = { state: 'synced' } | { state: 'error' | 'unknown'; error: string };
 
 /**
  * GitHub 반영 결과를 기록한다. `revisionVersion`은 반영을 시작할 때 읽은 의도의 version이다.
@@ -282,7 +280,6 @@ export function recordSyncResult(
     const updated = await tx`
       UPDATE revisions SET
         sync_state = ${outcome.state},
-        check_run_id = COALESCE(${outcome.checkRunId ?? null}::int8, check_run_id),
         last_error = ${error},
         last_synced_at = CASE WHEN ${outcome.state} = 'synced' THEN now() ELSE last_synced_at END
       WHERE id = ${revisionId} AND version = ${revisionVersion}`;
