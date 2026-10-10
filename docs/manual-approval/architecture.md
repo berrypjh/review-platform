@@ -1,13 +1,14 @@
 # Manual Approval — Architecture
 
-허용한 저장소의 PR에 GitHub App이 전용 Check `Review Platform / Manual Approval`을 붙이고, 운영자가 `/pulls`에서 승인하면 그 Check를 success로 바꿈. 코드는 `apps/web`, 승인 상태는 전용 PostgreSQL. 설정 · 운영은 [setup.md](setup.md).
+허용한 저장소의 PR head commit에 GitHub App이 commit status `Review Platform / Manual Approval`을 쓰고, 운영자가 `/pulls`에서 승인하면 그 status를 success로 바꿈. 코드는 `apps/web`, 승인 상태는 전용 PostgreSQL. 설정 · 운영은 [setup.md](setup.md).
 
 ## 1. 범위
 
 ### 하는 것
 
-- **전용 Check** — 대기 `queued`, 승인 `completed` + `success`, 현재가 아니게 된 미승인 revision(새 HEAD · close · merge)은 `completed` + `cancelled`
-- **summary 고정 문구** — `Manual approval only. No automated checks were run.`
+- **commit status** — context `Review Platform / Manual Approval`. 대기 `pending`, 승인 `success`, 현재가 아니게 된 미승인 revision(새 HEAD · close · merge)은 `error`
+- **`target_url`** — `PUBLIC_BASE_URL/pulls/<repositoryId>/<number>`. PR 화면의 Details가 이 주소로 바로 감
+- **description 고정 문구** — `Manual approval only. No automated checks were run.` 포함(140자 이하)
 - **수동 승인** — `APPROVER_GITHUB_IDS`에 있는 GitHub 사용자가 현재 head SHA · 현재 revision을 승인
 - **복구** — 운영자 재동기화(`POST /api/github/reconcile`) · GitHub Redeliver
 
@@ -23,8 +24,8 @@
 
 | 항목              | 내용                                                                                                                 |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Check 쓰기        | GitHub App installation token                                                                                        |
-| App 권한          | Checks: write · Pull requests: read · Metadata: read                                                                 |
+| status 쓰기       | GitHub App installation token. `POST /repos/{owner}/{repo}/statuses/{sha}`                                           |
+| App 권한          | Commit statuses: write · Pull requests: read · Metadata: read                                                        |
 | 로그인            | 같은 App의 user authorization(web flow) + PKCE S256. `GET /user`의 numeric ID만 쓰고 토큰은 버림                     |
 | 운영자 판정       | `APPROVER_GITHUB_IDS`(numeric user ID). 매 요청 확인                                                                 |
 | 대상 저장소       | `GITHUB_ALLOWED_REPOSITORY_IDS`(numeric repo ID) + `GITHUB_INSTALLATION_ID` 일치                                     |
@@ -75,7 +76,7 @@ sequenceDiagram
     WH->>DB: PR claim 획득 (최대 2초 대기)
     WH->>API: GET pulls/{n} (현재 상태 재조회)
     WH->>DB: PR 갱신. open이면서 HEAD 변경 · 재오픈 · 첫 관측이면 새 revision
-    WH->>API: 이 App의 기존 check run 조회(external_id) → 없으면 생성
+    WH->>API: POST statuses/{sha} (pending)
     WH->>DB: sync 결과 기록 (version CAS) · claim 해제 · delivery done
     WH-->>GH: 200 processed
 ```
@@ -96,7 +97,7 @@ sequenceDiagram
     AP->>AP: open · HEAD · revision이 입력과 같은가 (아니면 409)
     AP->>API: GET commits/{sha}/pulls — 같은 SHA의 다른 open PR (있거나 다 못 읽으면 409)
     AP->>DB: decision=approved · desired=success 기록
-    AP->>API: Check를 success로
+    AP->>API: POST statuses/{sha} (success)
     AP->>DB: sync 결과 기록
     AP->>API: GET pulls/{n} — revision이 그대로인가 (아니면 409 head-changed-after-approval)
     AP-->>Op: 200 approved · 502 not-confirmed
@@ -104,8 +105,8 @@ sequenceDiagram
 
 ### 닫힘 · 재오픈
 
-- **closed · merged** — 미승인 revision의 대기 Check는 `cancelled`. 승인된 Check는 그대로
-- **reopened** — 같은 SHA여도 새 revision과 새 `queued` Check
+- **closed · merged** — 미승인 revision의 status는 `error`. 승인된 status는 그대로
+- **reopened** — 같은 SHA여도 새 revision과 새 `pending` status
 
 ## 5. 상태
 
@@ -146,8 +147,8 @@ DB와 GitHub API는 한 transaction이 아님. 다음으로 수렴.
 - **version CAS** — sync 결과는 시작 시 읽은 revision `version`과 같을 때만 기록
 - **outbox** — revision의 `desired_check_state` · `sync_state`. `sync_state <> 'synced'`가 재동기화 대상
 - **늦은 payload** — payload는 트리거로만 씀. claim 뒤 GitHub에서 PR을 다시 읽음
-- **external_id** — `rp:<repositoryId>:<number>:<generation>`. 조회용 표식. 같은 external_id의 run이 여럿이면 가장 작은 id를 쓰고 나머지 미완료 run은 `cancelled`
-- **success 순서** — approved를 DB에 commit한 뒤에만 Check를 success로 바꿈
+- **같은 의도 재전송** — 같은 SHA · context의 status는 마지막 값이 보임. 결과를 모르는 반영은 같은 상태를 다시 보냄
+- **success 순서** — approved를 DB에 commit한 뒤에만 status를 success로 바꿈
 - **같은 SHA의 다른 open PR** — success로 바꾸기 전에도 다시 확인
 - **결과 미상** — timeout · 응답 유실 · 5xx는 sync `unknown`. Approved로 표시하지 않음
 
@@ -177,8 +178,8 @@ DB와 GitHub API는 한 transaction이 아님. 다음으로 수렴.
 | `head_sha`                                       | 40자 소문자 hex                                            |
 | `decision`                                       | `pending` · `approved`                                     |
 | `approver_id` · `approver_login` · `decision_at` | approved일 때만 not null                                   |
-| `check_run_id`                                   | **`UNIQUE`**, null 허용                                    |
-| `desired_check_state`                            | `queued` · `success` · `cancelled`                         |
+| `check_run_id`                                   | 쓰지 않음. Check Run 시절에 기록된 값만 남음               |
+| `desired_check_state`                            | `queued`(→ `pending`) · `success` · `cancelled`(→ `error`) |
 | `sync_state`                                     | `pending` · `synced` · `error` · `unknown`                 |
 | `last_error`                                     | 500자까지                                                  |
 | `version`                                        | 의도가 바뀔 때 +1                                          |
@@ -211,7 +212,7 @@ PK `(repository_id, number)`. PR 행이 없어도 claim 가능. `token`(uuid) ·
 
 | 이벤트 · action                                                  | 처리                                      |
 | ---------------------------------------------------------------- | ----------------------------------------- |
-| `pull_request` opened · reopened · synchronize · edited · closed | claim → 재조회 → DB 반영 → Check 동기화   |
+| `pull_request` opened · reopened · synchronize · edited · closed | claim → 재조회 → DB 반영 → status 동기화  |
 | `pull_request` 그 외 action                                      | `ignored`                                 |
 | `installation` deleted · suspend                                 | 해당 installation의 PR에 `blocked_reason` |
 | `installation` unsuspend                                         | `installation-suspended` 차단만 해제      |
@@ -232,33 +233,32 @@ PK `(repository_id, number)`. PR 행이 없어도 claim 가능. `token`(uuid) ·
 
 ## 9. 장애 · 순서 역전
 
-| 상황                                   | 결과                                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------------ |
-| 같은 delivery 재수신                   | done · ignored면 200 duplicate. failed · 60초 지난 processing은 재처리         |
-| 이전 synchronize가 늦게 도착           | 재조회 결과가 DB와 같으면 변경 없음                                            |
-| 승인 직전 push                         | 409 `head-changed` · `revision-changed`                                        |
-| 승인 기록 뒤 Check 반영 전 push        | 이전 SHA의 Check만 success. 새 SHA는 queued. 409 `head-changed-after-approval` |
-| 동시 승인                              | claim을 못 얻은 쪽은 503 `busy`. 이미 승인된 revision은 첫 결정 유지           |
-| Check 생성 · 갱신 결과 미상            | sync `unknown`. 재동기화가 external_id로 찾은 뒤 없을 때만 생성                |
-| Check 반영 뒤 DB 기록 실패             | sync `pending`. 재동기화가 같은 반영 반복                                      |
-| installation 정지 · 삭제 · 저장소 제거 | `blocked`. 모든 쓰기 거부                                                      |
-| `APPROVER_GITHUB_IDS`에서 제거         | 다음 요청부터 운영자 아님                                                      |
+| 상황                                   | 결과                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| 같은 delivery 재수신                   | done · ignored면 200 duplicate. failed · 60초 지난 processing은 재처리           |
+| 이전 synchronize가 늦게 도착           | 재조회 결과가 DB와 같으면 변경 없음                                              |
+| 승인 직전 push                         | 409 `head-changed` · `revision-changed`                                          |
+| 승인 기록 뒤 status 반영 전 push       | 이전 SHA의 status만 success. 새 SHA는 pending. 409 `head-changed-after-approval` |
+| 동시 승인                              | claim을 못 얻은 쪽은 503 `busy`. 이미 승인된 revision은 첫 결정 유지             |
+| status 반영 결과 미상                  | sync `unknown`. 재동기화가 같은 status를 다시 보냄                               |
+| status 반영 뒤 DB 기록 실패            | sync `pending`. 재동기화가 같은 반영 반복                                        |
+| installation 정지 · 삭제 · 저장소 제거 | `blocked`. 모든 쓰기 거부                                                        |
+| `APPROVER_GITHUB_IDS`에서 제거         | 다음 요청부터 운영자 아님                                                        |
 
 ## 10. 환경변수
 
-| 이름                            | 용도                                                                                                        |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                  | PostgreSQL                                                                                                  |
-| `GITHUB_APP_ID`                 | Check 소유 확인 · `app_id` 필터                                                                             |
-| `GITHUB_APP_CLIENT_ID`          | OAuth · App JWT `iss`                                                                                       |
-| `GITHUB_APP_CLIENT_SECRET`      | OAuth code 교환                                                                                             |
-| `GITHUB_APP_PRIVATE_KEY`        | App JWT 서명(PEM, `\n` 이스케이프 허용)                                                                     |
-| `GITHUB_WEBHOOK_SECRET`         | `X-Hub-Signature-256` 검증                                                                                  |
-| `GITHUB_INSTALLATION_ID`        | 허용 installation                                                                                           |
-| `GITHUB_ALLOWED_REPOSITORY_IDS` | 쉼표 구분 numeric repo ID                                                                                   |
-| `APPROVER_GITHUB_IDS`           | 쉼표 구분 numeric user ID                                                                                   |
-| `PUBLIC_BASE_URL`               | 경로 없는 origin. https, 단 localhost · 127.0.0.1은 http 허용. `details_url` · OAuth callback · Origin 비교 |
-| `TEST_DATABASE_URL`             | DB 통합 테스트 전용                                                                                         |
+| 이름                            | 용도                                                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | PostgreSQL                                                                                                 |
+| `GITHUB_APP_CLIENT_ID`          | OAuth · App JWT `iss`                                                                                      |
+| `GITHUB_APP_CLIENT_SECRET`      | OAuth code 교환                                                                                            |
+| `GITHUB_APP_PRIVATE_KEY`        | App JWT 서명(PEM, `\n` 이스케이프 허용)                                                                    |
+| `GITHUB_WEBHOOK_SECRET`         | `X-Hub-Signature-256` 검증                                                                                 |
+| `GITHUB_INSTALLATION_ID`        | 허용 installation                                                                                          |
+| `GITHUB_ALLOWED_REPOSITORY_IDS` | 쉼표 구분 numeric repo ID                                                                                  |
+| `APPROVER_GITHUB_IDS`           | 쉼표 구분 numeric user ID                                                                                  |
+| `PUBLIC_BASE_URL`               | 경로 없는 origin. https, 단 localhost · 127.0.0.1은 http 허용. `target_url` · OAuth callback · Origin 비교 |
+| `TEST_DATABASE_URL`             | DB 통합 테스트 전용                                                                                        |
 
 하나라도 없거나 잘못되면 `ConfigurationError` → 503 `not-configured`.
 

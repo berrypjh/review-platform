@@ -2,7 +2,7 @@
 
 DB · 배포 · GitHub App 설치부터 첫 승인, required 지정, 장애 복구까지 운영자가 하는 일. 동작은 [architecture.md](architecture.md).
 
-- **대상 저장소에는 파일을 추가하지 않음** — 이벤트는 App webhook으로 오고 Check는 review-platform이 씀
+- **대상 저장소에는 파일을 추가하지 않음** — 이벤트는 App webhook으로 오고 commit status는 review-platform이 씀
 - **secret 값은 기록하지 않음** — 호스팅 환경변수와 로컬 `.env.local`에만
 
 ## 대상 저장소
@@ -44,7 +44,8 @@ App 설치 범위와 `GITHUB_ALLOWED_REPOSITORY_IDS` **둘 다에 있는 저장�
 | 항목                                                   | 값                                               |
 | ------------------------------------------------------ | ------------------------------------------------ |
 | Homepage URL                                           | `PUBLIC_BASE_URL`                                |
-| Callback URL                                           | `PUBLIC_BASE_URL/api/auth/github/callback`       |
+| Redirect URI                                           | `PUBLIC_BASE_URL/api/auth/github/callback`       |
+| Allow wildcard matching                                | 끔                                               |
 | Expire user authorization tokens                       | 켬                                               |
 | Request user authorization (OAuth) during installation | 끔                                               |
 | Enable Device Flow                                     | 끔                                               |
@@ -54,19 +55,18 @@ App 설치 범위와 `GITHUB_ALLOWED_REPOSITORY_IDS` **둘 다에 있는 저장�
 
 ## 3. 권한과 이벤트
 
-| 구분                   | 값                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| Repository permissions | Checks: **Read and write** · Pull requests: **Read-only** · Metadata: **Read-only** |
-| Subscribe to events    | **Pull request**                                                                    |
+| 구분                   | 값                                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| Repository permissions | Commit statuses: **Read and write** · Pull requests: **Read-only** · Metadata: **Read-only** |
+| Subscribe to events    | **Pull request**                                                                             |
 
 ## 4. App 값
 
-| App 설정 페이지              | 환경변수                   |
-| ---------------------------- | -------------------------- |
-| App ID                       | `GITHUB_APP_ID`            |
-| Client ID                    | `GITHUB_APP_CLIENT_ID`     |
-| Generate a new client secret | `GITHUB_APP_CLIENT_SECRET` |
-| Generate a private key       | `GITHUB_APP_PRIVATE_KEY`   |
+| App 설정 위치                                      | 환경변수                   |
+| -------------------------------------------------- | -------------------------- |
+| General → About → Client ID                        | `GITHUB_APP_CLIENT_ID`     |
+| Credentials → Generate a new client secret         | `GITHUB_APP_CLIENT_SECRET` |
+| Credentials → Generate a private key (`.pem` 전체) | `GITHUB_APP_PRIVATE_KEY`   |
 
 운영자 ID — `curl -s https://api.github.com/users/<login> | jq .id` → `APPROVER_GITHUB_IDS`
 
@@ -78,7 +78,6 @@ App 설치 범위와 `GITHUB_ALLOWED_REPOSITORY_IDS` **둘 다에 있는 저장�
 | `REVIEW_DATA_DIR`               | 절대 경로(예: `/var/task/.review-data`) | ○          | ○       |
 | `PUBLIC_BASE_URL`               | `https://<production 도메인>`           | ○          | —       |
 | `DATABASE_URL`                  | pooled 연결 문자열                      | ○          | —       |
-| `GITHUB_APP_ID`                 | §4                                      | ○          | —       |
 | `GITHUB_APP_CLIENT_ID`          | §4                                      | ○          | —       |
 | `GITHUB_APP_CLIENT_SECRET`      | §4                                      | ○          | —       |
 | `GITHUB_APP_PRIVATE_KEY`        | PEM 전체(한 줄이면 줄바꿈을 `\n`으로)   | ○          | —       |
@@ -137,13 +136,13 @@ git push -u origin test/review-platform-manual-approval
 gh pr create --draft --base main --title "[test] Review Platform manual approval E2E — do not merge" --body "Temporary."
 ```
 
-| 확인                        | 기대                                                                   |
-| --------------------------- | ---------------------------------------------------------------------- |
-| PR Checks 탭                | `Review Platform / Manual Approval` Queued                             |
-| `/pulls` → PR → **Approve** | "Approved. GitHub confirmed the check for head commit …"               |
-| PR Checks 탭                | Success, summary `Manual approval only. No automated checks were run.` |
-| 두 번째 commit push         | 새 head에 Queued. 이전에 승인한 Check는 Success 유지                   |
-| close 뒤                    | 승인 버튼 없음                                                         |
+| 확인                        | 기대                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| PR 하단 상태 상자           | `Review Platform / Manual Approval` Pending. **Details** → `/pulls/<repositoryId>/<number>` |
+| `/pulls` → PR → **Approve** | "Approved. GitHub confirmed the check for head commit …"                                    |
+| PR 하단 상태 상자           | Success                                                                                     |
+| 두 번째 commit push         | 새 head에 Pending. 이전에 승인한 commit은 Success 유지                                      |
+| close 뒤                    | 승인 버튼 없음                                                                              |
 
 ```bash
 printf '\nSecond commit.\n' >> REVIEW_PLATFORM_E2E.md
@@ -156,7 +155,7 @@ cd ../<repo> && git worktree remove ../<repo>-e2e
 ## 9. Required check 지정 (선택)
 
 - Settings → Rules → Rulesets → main ruleset → Require status checks to pass → Add checks → `Review Platform / Manual Approval`
-- **source는 이 GitHub App으로** 지정
+- source 선택지에 이 GitHub App이 있으면 그 App으로 지정
 - 기존 required check는 그대로 두고 추가
 - 목록에 이름이 없으면 §8을 먼저
 - merge queue를 켜지 않음
@@ -165,14 +164,14 @@ cd ../<repo> && git worktree remove ../<repo>-e2e
 
 | 증상                                         | 조치                                                                        |
 | -------------------------------------------- | --------------------------------------------------------------------------- |
-| PR에 Check가 안 생김                         | Recent Deliveries의 실패 delivery **Redeliver**, 또는 `/pulls` **Sync PRs** |
+| PR에 status가 안 생김                        | Recent Deliveries의 실패 delivery **Redeliver**, 또는 `/pulls` **Sync PRs** |
 | 승인 뒤 not confirmed · Sync unknown · error | PR 상세 **Retry sync**                                                      |
 | `/pulls`가 not configured                    | 환경변수 수정 후 Redeploy                                                   |
 | 409 `shared-head`                            | 같은 SHA의 다른 open PR을 정리한 뒤 승인                                    |
 | PR이 Blocked                                 | App 설치 · 저장소 접근 복구 뒤 **Sync PRs**                                 |
 | 다시 로그인 요구                             | 세션 12시간 만료                                                            |
 
-- **App 제거 전** — 이 Check를 required에서 먼저 뺌. 제거 뒤에는 Queued로 남은 PR이 merge되지 않음
+- **App 제거 전** — 이 status를 required에서 먼저 뺌. 제거 뒤에는 Pending으로 남은 PR이 merge되지 않음
 
 ### curl
 

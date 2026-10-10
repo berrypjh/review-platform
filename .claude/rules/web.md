@@ -20,16 +20,16 @@ Next.js App Router. 소스는 `src/`, alias는 `@/*` → `./src/*`. Review UI다
 - 파일을 읽는 page는 `await connection()`으로 prerender를 막는다
 - 별도 API 서버를 만들지 않는다. Visual 데이터에 DB · 승인 저장을 붙이지 않는다
 
-## PR 수동 승인 (`/pulls` 화면 · API 구현, 실제 GitHub 검증 전)
+## PR 수동 승인 (`/pulls` 화면 · API)
 
-GitHub App으로 허용한 저장소의 PR에 전용 Check `Review Platform / Manual Approval`을 쓰는 기능. 설계는 [architecture.md](../../docs/manual-approval/architecture.md). Visual과 서로 import하지 않는다.
+GitHub App으로 허용한 저장소의 PR head commit에 commit status `Review Platform / Manual Approval`을 쓰는 기능. 설계는 [architecture.md](../../docs/manual-approval/architecture.md). Visual과 서로 import하지 않는다.
 
 - **승인 상태는 PostgreSQL에만.** 파일 · 모듈 메모리 · localStorage에 영구 보관하지 않는다. `run.json`을 고치지 않고 Visual status를 승인 판단에 쓰지 않는다
 - **경계** — 연결 pool은 `lib/db/`만 연다(`getSql`, 지연 초기화). SQL 함수는 `Db`를 인자로 받는다. `lib/github/`만 GitHub API를 부른다. 상태 전이 · 표시 계산은 `lib/manual-approval/state.ts` 하나
 - **route는 얇게** — 입력 parse · `guardMutation` · lib 함수 하나 · 결과 매핑. 의존은 `approvalRuntime()`(server-only)에서만 얻는다
 - **외부 호출은 `Transport = (url, init)`.** `new Request(..., { signal })`로 감싸지 않는다 — 파생 signal은 GC 뒤 timeout이 오지 않는다([기록](../../docs/records/2026-10-10-fetch-timeout-signal.md))
 - **가짜 GitHub(`fake-github.ts`) · `test-support.ts`는 테스트에서만 주입한다.** 런타임에 transport를 고르는 env · header · query를 만들지 않는다
-- **Check는 이 App 것만 만지고, 이름은 `Review Platform / Manual Approval` 고정.** 다른 App · Actions의 run, PR review · merge API를 부르지 않는다
+- **commit status는 context `Review Platform / Manual Approval` 하나만 쓴다.** `target_url`은 `/pulls/<repositoryId>/<number>`. 다른 context · Check Run, PR review · merge API를 건드리지 않는다
 - **`import 'server-only'`는 env를 읽는 진입 모듈에만**(`lib/db/client.ts` 등). 패키지를 설치하지 않았으므로 vitest · `pnpm db:migrate`가 import하는 모듈에 넣으면 깨진다
 - **migration은 `apps/web/db/migrations/NNNN_*.sql` 추가로만.** 적용된 파일을 고치지 않는다. drop · reset 하지 않는다
 - **SQL은 tagged template(parameterized).** `unsafe`는 커밋된 migration과 고정 열 목록에만
