@@ -3,11 +3,11 @@ import { expect, test } from '@playwright/test';
 /**
  * 배포 서버 읽기 전용 smoke. `LIVE_SMOKE=1 BASE_URL=https://…`일 때만 돈다 — 일반 실행 · CI에서는 skip.
  * PR을 만들거나 DB에 쓰지 않는다(로그인 시작 · 승인 · 재동기화를 부르지 않는다). 실제 승인 루프는 사람이 한다:
- * docs/manual-approval/e2e-report.md.
+ * docs/manual-approval/setup.md.
  */
 test.skip(
   process.env['LIVE_SMOKE'] !== '1' || !process.env['BASE_URL'],
-  'Opt-in: LIVE_SMOKE=1 BASE_URL=https://<deployment> (docs/manual-approval/e2e-report.md)',
+  'Opt-in: LIVE_SMOKE=1 BASE_URL=https://<deployment> (docs/manual-approval/setup.md)',
 );
 
 test('serves the Visual runs page over HTTPS', async ({ page, baseURL }) => {
