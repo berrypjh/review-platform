@@ -47,13 +47,15 @@ export function pull(number: number, overrides: Record<string, unknown> = {}) {
 /**
  * 테스트 harness가 만든 세션을 브라우저에 넣는다. 운영 코드의 인증을 건너뛰는 경로가 아니라,
  * 로그인 callback이 만들었을 것과 같은 DB 세션 + `__Host-` cookie다.
+ * `url`을 주면 Playwright가 http에서 `secure`를 false로 덮어써 `__Host-`가 거부되므로 domain · path로 넣는다.
  */
 export async function signIn(context: BrowserContext, baseURL: string, token = OPERATOR_TOKEN) {
   await context.addCookies([
     {
       name: '__Host-rp_session',
       value: token,
-      url: baseURL,
+      domain: new URL(baseURL).hostname,
+      path: '/',
       httpOnly: true,
       secure: true,
       sameSite: 'Lax',
