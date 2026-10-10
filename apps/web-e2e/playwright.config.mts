@@ -21,7 +21,6 @@ function approvalEnv(databaseUrl: string): Record<string, string> {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   return {
     DATABASE_URL: databaseUrl,
-    GITHUB_APP_ID: '77',
     GITHUB_APP_CLIENT_ID: 'Iv1.e2e',
     GITHUB_APP_CLIENT_SECRET: 'e2e-client-secret',
     GITHUB_APP_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
