@@ -12,7 +12,7 @@ Nx integrated monorepo. package manager는 **pnpm**(`package.json`의 `packageMa
 
 | project            | 위치                    | 스택                 | 역할                                                                   |
 | ------------------ | ----------------------- | -------------------- | ---------------------------------------------------------------------- |
-| `web`              | `apps/web`              | Next.js + TypeScript | Review UI. `run.json`을 읽기만 한다 — 비교 · 승인 · 저장을 하지 않는다 |
+| `web`              | `apps/web`              | Next.js + TypeScript | Review UI. Visual은 `run.json`을 읽기만 한다. PR 수동 승인만 DB에 쓴다 |
 | `web-e2e`          | `apps/web-e2e`          | Playwright           | web E2E. Chromium 하나                                                 |
 | `visual-contracts` | `libs/visual-contracts` | zod                  | artifact JSON의 단일 계약. 비공개 · 릴리스하지 않음                    |
 
@@ -55,6 +55,7 @@ Nx 프로젝트가 아닌 곳도 있다.
 - **측정하지 못한 값은 0이 아니다.** `null` + 이유로 남기고, 화면은 "Not measured"로 보여 준다
 - **status는 한 곳에서 계산한다.** `deriveRunStatus` 하나. UI · CLI가 다시 계산하지 않는다
 - **artifact 경로는 run 디렉터리 기준 상대 경로다.** 절대 경로 · `..`은 계약이 거부한다
+- **PR 수동 승인은 Visual과 분리한다.** 승인 상태는 전용 PostgreSQL에만 두고 `run.json`을 고치지 않는다. GitHub에는 전용 Check 하나만 쓴다. webhook · 로그인 · 승인 API까지 구현, 화면은 아직 없음 ([architecture.md](docs/manual-approval/architecture.md))
 
 경로별 상세 규칙은 `.claude/rules/`에 있고 해당 파일을 열 때 적용된다 — `web.md` · `contracts.md` · `tools.md` · `e2e.md` · `docs.md`. **하위 `AGENTS.md`를 두지 않는다.** 프로젝트 문서는 root의 `docs/`와 rule이 맡는다 ([기록](docs/records/2026-09-24-rules-not-per-project-agents.md)).
 
@@ -113,6 +114,7 @@ architecture를 auto memory에만 두지 않는다. **secret과 credential은 �
 | [quality-gates.md](docs/engineering/quality-gates.md)               | 검증 · 테스트 현황 · 의존성 원칙              |
 | [shared-stack-dogfood.md](docs/integration/shared-stack-dogfood.md) | shared-stack Storybook으로 손으로 돌려 보기   |
 | [pr-integration.md](docs/integration/pr-integration.md)             | 다른 저장소의 PR에서 reusable workflow로 실행 |
+| [manual-approval](docs/manual-approval/architecture.md)             | PR 수동 승인 · GitHub Check 설계와 진행       |
 | [docs/records](docs/records/)                                       | 날짜별 개발 기록(결정 · 수정 · 구현)          |
 
 AI harness(rule · hook · permission)가 어떻게 구성돼 있는지는 [.claude/README.md](.claude/README.md).

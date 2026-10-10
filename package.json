@@ -18,6 +18,7 @@
     "format:check": "nx format:check",
     "tools:check": "tsc -p tools/tsconfig.json && eslint tools && vitest run --config tools/vitest.config.mts",
     "test:hooks": "node --test tools/hooks/*.test.mjs",
+    "db:migrate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON apps/web/src/lib/db/migrate-cli.ts",
     "visual:capture": "tsx tools/visual/capture/cli.ts",
     "visual:compare": "tsx tools/visual/compare/cli.ts",
     "visual:summary": "tsx tools/visual/summary/cli.ts"

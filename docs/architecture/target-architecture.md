@@ -40,8 +40,8 @@ tools/visual                     apps/web (Next.js)
   summary → Markdown (CI)        읽기: runs/*/run.json, 제공: artifacts/*.png
 ```
 
-- **수집은 Node, 표시는 브라우저.** 브라우저는 명령을 실행하지 않는다. 명령 endpoint가 없다
-- **`run.json`이 web의 유일한 source of truth다.** web은 mismatch를 다시 계산하지 않고 표시 형식만 바꾼다
+- **수집은 Node, 표시는 브라우저.** 브라우저는 명령을 실행하지 않는다. Visual에는 명령 endpoint가 없다
+- **`run.json`이 Visual 화면의 유일한 source of truth다.** web은 mismatch를 다시 계산하지 않고 표시 형식만 바꾼다
 - **모든 artifact 경로는 run 디렉터리 기준 상대 경로다.** `run.json`에 절대 경로가 들어가지 않으므로 디렉터리째 옮기거나 artifact로 올려도 그대로 읽힌다
 - **한 run은 한 번만 비교한다.** `run.json` · `diff/`가 있으면 compare가 거부한다. 다시 하려면 직접 지운다
 
@@ -113,3 +113,7 @@ Playwright 버전을 올리면 Chromium build가 바뀌어 **모든 target이 `c
 - 두 번째 기능(예: 패키지 호환성 검사). 첫 기능을 실제로 쓴 뒤에 판단한다
 
 **이 목록은 "예정"이 아니라 "없음"이다.** 위 기능과 관련된 코드는 저장소에 존재하지 않는다.
+
+일부만 구현된 것:
+
+- PR 수동 승인 — GitHub App 하나 · 전용 Check `Review Platform / Manual Approval` · GitHub 로그인 · 전용 PostgreSQL. 위 목록의 status check · 영구 저장소 · GitHub App · 인증 · hosted Review UI 중 승인에 필요한 만큼만 다룬다. Visual 흐름과 분리되어 `run.json`을 고치지 않는다. GitHub App webhook · Check 쓰기 · GitHub 로그인 · 승인 · 재동기화 API까지 구현, 화면 없음, 실제 GitHub · 배포 검증 전 ([architecture.md](../manual-approval/architecture.md))
