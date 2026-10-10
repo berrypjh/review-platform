@@ -57,8 +57,9 @@ const ICONS = { success: CircleCheck, info: Info, error: CircleAlert };
 
 function OutcomeAlert({ outcome }: { outcome: ActionOutcome }) {
   const Icon = ICONS[outcome.tone];
+  // live region 역할은 감싼 `status` · `alert`가 맡는다. shadcn Alert의 role="alert"가 겹치지 않게 지운다.
   return (
-    <Alert variant={outcome.tone === 'error' ? 'destructive' : 'default'}>
+    <Alert role="none" variant={outcome.tone === 'error' ? 'destructive' : 'default'}>
       <Icon aria-hidden="true" />
       <AlertDescription className="break-words">{outcome.message}</AlertDescription>
     </Alert>

@@ -42,7 +42,10 @@ export function RevisionHistory({
             <TableCell>
               {revision.generation}
               {revision.id === activeRevisionId && (
-                <span className="ml-2 text-muted-foreground">(current)</span>
+                <>
+                  {' '}
+                  <span className="ml-1 text-muted-foreground">(current)</span>
+                </>
               )}
             </TableCell>
             <TableCell>
