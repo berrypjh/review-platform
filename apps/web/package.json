@@ -6,6 +6,12 @@
     "name": "web",
     "sourceRoot": "apps/web/src",
     "targets": {
+      "build": {
+        "dependsOn": [
+          "^build",
+          "^typecheck"
+        ]
+      },
       "typecheck": {
         "executor": "nx:run-commands",
         "cache": true,
