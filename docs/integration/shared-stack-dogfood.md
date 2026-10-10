@@ -1,59 +1,43 @@
-# shared-stack Storybook으로 dogfooding하기
+# 로컬에서 Storybook 두 build 비교
 
-`berrypjh/shared-stack`의 react-ui Storybook build 두 개를 review-platform의 Visual Regression MVP로 비교하고, 결과를 로컬 Review UI에서 확인하는 절차다.
+검사 대상 저장소의 Storybook build 두 개를 `visual:capture` · `visual:compare`로 비교하고 로컬 Review UI에서 확인하는 절차. 예시는 shared-stack과 [`fixtures/visual/targets/shared-stack.json`](../../fixtures/visual/targets/shared-stack.json).
 
-shared-stack은 아무것도 바꾸지 않는다. 별도 checkout에서 Storybook을 build해 serve하기만 하고, review-platform은 그것을 HTTP로 읽는다.
+- **검사 대상 저장소는 변경하지 않음** — 별도 checkout에서 build · serve만 하고 review-platform이 HTTP로 읽음
 
-## 무엇을 비교하나
+## manifest
 
-target은 [`fixtures/visual/targets/shared-stack.json`](../../fixtures/visual/targets/shared-stack.json)에 있다.
+| 항목     | 값                                                                          |
+| -------- | --------------------------------------------------------------------------- |
+| viewport | `1280 x 720`                                                                |
+| target   | `components-buttons-button--default` · `components-buttons-button--loading` |
 
-| Target                                | Story id                             |
-| ------------------------------------- | ------------------------------------ |
-| `Components/Buttons/Button / Default` | `components-buttons-button--default` |
-| `Components/Buttons/Button / Loading` | `components-buttons-button--loading` |
+- story id는 build된 `storybook-static/index.json`에서 확인. story title · export 이름이 바뀌면 manifest 갱신
 
-- viewport 1280 x 720, Chromium 하나만 쓴다.
-- story id는 shared-stack `7888724e59b35e45880c736f03b4ecf3215f8e78`(`main`, 2026-09-24)을 build한 `storybook-static/index.json`에서 읽었다. Button story의 title이나 export 이름이 바뀌면 `index.json`을 다시 확인해 manifest를 갱신한다.
+## 준비
 
-## 시작 전에
-
-review-platform(이 저장소):
+review-platform:
 
 ```bash
 pnpm install
-pnpm exec playwright install chromium   # Playwright 버전이 바뀔 때마다 한 번
+pnpm exec playwright install chromium
 ```
 
-shared-stack: baseline용과 candidate용으로 **clean checkout이 두 개** 필요하다. 커밋하지 않은 작업이 있는 checkout을 재사용하지 말고, 그것을 깨끗하게 만들려고 reset, stash, `checkout --`을 쓰지도 않는다. 대신 다음 중 하나를 쓴다.
+검사 대상 저장소: baseline · candidate용 clean checkout 두 개. 작업 중인 working tree는 쓰지 않음.
 
 ```bash
-# 방법 A: 기존 clone에서 git worktree (작업 중인 working tree는 건드리지 않는다)
-cd <your-shared-stack-clone>
+cd <shared-stack-clone>
 git fetch origin
 git worktree add ../shared-stack-baseline origin/main
 git worktree add ../shared-stack-candidate <candidate-branch-or-sha>
-
-# 방법 B: 새로 clone
-git clone https://github.com/berrypjh/shared-stack.git shared-stack-baseline
-git clone https://github.com/berrypjh/shared-stack.git shared-stack-candidate
-git -C shared-stack-candidate checkout <candidate-branch-or-sha>
 ```
 
-worktree나 clone마다 `pnpm install --frozen-lockfile`을 한 번 실행한다. build는 git-ignored 파일(`dist`, `storybook-static`)만 만들므로 checkout은 깨끗하게 유지된다.
-
-compare 단계에서 쓰므로 두 SHA를 기록해 둔다.
-
-```bash
-git -C ../shared-stack-baseline rev-parse HEAD
-git -C ../shared-stack-candidate rev-parse HEAD
-```
-
-비교할 때마다 새 run id를 정한다. 예: `button-2026-09-24`. `a-z`, `0-9`, `-`만 쓸 수 있다.
+- 각 worktree에서 `pnpm install --frozen-lockfile`
+- 두 SHA 기록 — `git -C ../shared-stack-baseline rev-parse HEAD` · `git -C ../shared-stack-candidate rev-parse HEAD`
+- run id — 비교마다 새 값. `a-z` · `0-9` · `-`, 1~100자, `-`로 시작 · 끝나지 않음
 
 ## 1. Baseline
 
-baseline checkout에서 (터미널 A):
+baseline checkout에서:
 
 ```bash
 cd ../shared-stack-baseline
@@ -62,7 +46,7 @@ pnpm build-storybook
 pnpm exec http-server libs/react-ui/storybook-static -a 127.0.0.1 -p 6006 --silent
 ```
 
-`http://127.0.0.1:6006`이 응답하면 review-platform에서 (터미널 B):
+review-platform에서:
 
 ```bash
 pnpm visual:capture -- \
@@ -72,20 +56,11 @@ pnpm visual:capture -- \
   --targets fixtures/visual/targets/shared-stack.json
 ```
 
-`.review-data/runs/<run-id>/baseline/<story-id>.png`가 생긴다. 터미널 A의 서버를 멈춘다 (Ctrl+C).
+결과 — `.review-data/runs/<run-id>/baseline/<story-id>.png`. 끝나면 서버 종료.
 
 ## 2. Candidate
 
-candidate checkout에서 같은 포트로 build와 serve를 반복한다.
-
-```bash
-cd ../shared-stack-candidate
-pnpm build:libs:web
-pnpm build-storybook
-pnpm exec http-server libs/react-ui/storybook-static -a 127.0.0.1 -p 6006 --silent
-```
-
-같은 run id로 `current`를 찍는다.
+candidate checkout에서 같은 build · serve 뒤, 같은 run id로:
 
 ```bash
 pnpm visual:capture -- \
@@ -94,8 +69,6 @@ pnpm visual:capture -- \
   --base-url http://127.0.0.1:6006 \
   --targets fixtures/visual/targets/shared-stack.json
 ```
-
-끝나면 서버를 멈춘다.
 
 ## 3. Compare
 
@@ -108,7 +81,7 @@ pnpm visual:compare -- \
   --targets fixtures/visual/targets/shared-stack.json
 ```
 
-target마다 한 줄씩 결과를 출력하고, changed target에는 `diff/<story-id>.png`를, 그리고 `.review-data/runs/<run-id>/run.json`을 쓴다.
+결과 — target별 한 줄 출력, changed target의 `diff/<story-id>.png`, `.review-data/runs/<run-id>/run.json`.
 
 ## 4. Review
 
@@ -116,50 +89,30 @@ target마다 한 줄씩 결과를 출력하고, changed target에는 `diff/<stor
 REVIEW_DATA_DIR="$PWD/.review-data" pnpm dev
 ```
 
-<http://localhost:3000>을 열어 run을 고르고 다음을 확인한다.
+`http://localhost:3000`에서 run 선택.
 
-- **Run status**: 아무것도 바뀌지 않았으면 `Passed`, story가 바뀌었으면 `Review required`, capture나 비교가 빠졌으면 `Failed`.
-- **Unchanged** story: 0 px이고 Diff 탭이 비활성이며 "No diff generated"가 보인다.
-- **Changed** story: mismatch 픽셀 수와 비율이 보이고, Diff 탭에 바뀐 픽셀이 빨갛게 표시된다. Baseline·Current 탭과 좌우 비교 영역에 두 스크린샷이 보인다.
-- 각 변경이 **의도한 것인지**. 도구는 차이를 보고할 뿐이고, 그 변경이 예상된 것인지는 사람이 판단한다.
-
-### 실제 결과 예시
-
-2026-09-24에 `button.scss`의 loading spinner radius만 바꾼 candidate(`7888724` 위의 로컬 전용 commit, push하지 않음)로 처음부터 끝까지 확인했다.
-
-```
-unchanged components-buttons-button--default  0 px (0)
-changed   components-buttons-button--loading  490 px (0.0005316840277777777)
-run review-required
-```
-
-같은 build를 두 번 찍어 비교하면 animation이 있는 spinner를 포함해 두 story 모두 0 px으로 `run passed`였다.
+| 표시             | 의미                                              |
+| ---------------- | ------------------------------------------------- |
+| Passed           | 모든 target unchanged                             |
+| Review required  | changed target 있음                               |
+| Failed           | error target 있음(이미지 누락 · 비교 실패)        |
+| Unchanged target | 0 px, Diff 탭 비활성, "No diff generated"         |
+| Changed target   | mismatch 픽셀 수 · 비율, Diff 탭에 바뀐 픽셀 표시 |
 
 ## 문제 해결
 
-| 메시지                                                   | 원인과 대처                                                                             |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `... already exists; use a new --run-id`                 | 그 run에 이미 이 capture나 `run.json`이 있다. 새 run id를 쓴다.                         |
-| `failed at stage "navigate": ... ERR_CONNECTION_REFUSED` | `--base-url`에 Storybook이 떠 있지 않다.                                                |
-| `failed at stage "wait-root": ... Timeout`               | 그 build에 story id가 없다. `storybook-static/index.json`을 확인해 manifest를 갱신한다. |
-| `run.json`의 `Missing image: baseline/...`               | 그 story의 baseline capture가 없다. run은 `Failed`다.                                   |
-| 6006번 포트 사용 중                                      | 다른 서버(예: `pnpm storybook`)를 멈추거나, 두 명령 모두 다른 포트를 쓴다.              |
+| 메시지                                                   | 원인 · 조치                                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------ |
+| `... already exists; use a new --run-id`                 | 그 run에 이미 같은 capture 또는 `run.json`이 있음. 새 run id |
+| `failed at stage "navigate": ... ERR_CONNECTION_REFUSED` | `--base-url`에 Storybook이 없음                              |
+| `failed at stage "wait-root": ... Timeout`               | build에 story id가 없음. `index.json` 확인 후 manifest 갱신  |
+| `run.json`의 `Missing image: baseline/...`               | 해당 story의 baseline capture 없음. run은 Failed             |
+| 6006번 포트 사용 중                                      | 다른 서버 종료 또는 다른 포트 사용                           |
 
-worktree를 다 썼으면 `git worktree remove ../shared-stack-baseline` (candidate도 같게). run을 버리려면 `.review-data/runs/<run-id>`를 지운다.
+## 정리
 
-## Chromatic과 비교
-
-shared-stack의 Chromatic workflow(`.github/workflows/chromatic.yml`)는 그대로 둔다. 이 MVP는 그중 일부만 다룬다.
-
-로컬 용도로 대체하는 것:
-
-- Storybook story를 Chromium으로 찍어 baseline과 픽셀 단위로 비교하기.
-- run의 baseline, current, diff 이미지를 확인하기.
-
-아직 대체하지 않는 것:
-
-- CI: run은 한 머신에서 손으로 시작한다.
-- PR status check.
-- hosted Storybook.
-- 영구 저장소: run은 로컬 `.review-data` 디렉터리에만 있다.
-- 사람의 승인 이력: accept/reject가 없고, review 결과로 baseline을 갱신하지 않는다.
+```bash
+git worktree remove ../shared-stack-baseline
+git worktree remove ../shared-stack-candidate
+rm -rf .review-data/runs/<run-id>
+```

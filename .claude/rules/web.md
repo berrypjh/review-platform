@@ -22,7 +22,7 @@ Next.js App Router. 소스는 `src/`, alias는 `@/*` → `./src/*`. Review UI다
 
 ## PR 수동 승인 (`/pulls` 화면 · API 구현, 실제 GitHub 검증 전)
 
-GitHub App으로 세 저장소 PR에 전용 Check `Review Platform / Manual Approval`을 쓰는 기능. 설계는 [architecture.md](../../docs/manual-approval/architecture.md). Visual과 서로 import하지 않는다.
+GitHub App으로 허용한 저장소의 PR에 전용 Check `Review Platform / Manual Approval`을 쓰는 기능. 설계는 [architecture.md](../../docs/manual-approval/architecture.md). Visual과 서로 import하지 않는다.
 
 - **승인 상태는 PostgreSQL에만.** 파일 · 모듈 메모리 · localStorage에 영구 보관하지 않는다. `run.json`을 고치지 않고 Visual status를 승인 판단에 쓰지 않는다
 - **경계** — 연결 pool은 `lib/db/`만 연다(`getSql`, 지연 초기화). SQL 함수는 `Db`를 인자로 받는다. `lib/github/`만 GitHub API를 부른다. 상태 전이 · 표시 계산은 `lib/manual-approval/state.ts` 하나
@@ -101,7 +101,7 @@ Tailwind v4 + shadcn(radix, nova preset, `components.json`). 색 · radius는 sh
 pnpm nx lint web
 pnpm nx typecheck web      # tsconfig.json + tsconfig.spec.json
 pnpm nx test web           # lib/ 단위 테스트
-TEST_DATABASE_URL=… pnpm nx test-db web   # 실제 PostgreSQL 통합 테스트 (docs/manual-approval/architecture.md#16-로컬-db)
+TEST_DATABASE_URL=… pnpm nx test-db web   # 실제 PostgreSQL 통합 테스트 (docs/manual-approval/architecture.md#14-로컬-db)
 pnpm nx build web          # AI 세션에서는 hook이 막는다 — 사용자에게 요청
 ```
 
