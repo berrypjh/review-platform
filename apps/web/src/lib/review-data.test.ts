@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import type { VisualRun } from '@review-platform/visual-contracts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { listRuns, loadRun, readArtifactPng } from './review-data';
+import { listRuns, loadRun, readArtifactPng, reviewDataDir } from './review-data';
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 
@@ -140,5 +140,34 @@ describe('readArtifactPng', () => {
 
     expect(await readArtifactPng(dataDir, 'sample', ['diff', 'leak.png'])).toBeNull();
     await rm(outside, { recursive: true });
+  });
+});
+
+describe('reviewDataDir', () => {
+  const cwd = process.cwd();
+  const env = process.env['REVIEW_DATA_DIR'];
+  afterEach(() => {
+    process.chdir(cwd);
+    if (env === undefined) delete process.env['REVIEW_DATA_DIR'];
+    else process.env['REVIEW_DATA_DIR'] = env;
+  });
+
+  it('resolves a relative directory from the workspace root', () => {
+    process.env['REVIEW_DATA_DIR'] = 'fixtures/visual/review-data';
+    expect(reviewDataDir()).toMatch(/\/fixtures\/visual\/review-data$/);
+    expect(reviewDataDir()).not.toContain('/apps/web/');
+  });
+
+  // 서버리스 번들처럼 pnpm-workspace.yaml이 없는 곳에서도 절대 경로는 그대로 쓴다
+  it('uses an absolute directory without looking for the workspace root', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'no-workspace-'));
+    try {
+      process.chdir(outside);
+      process.env['REVIEW_DATA_DIR'] = join(outside, 'review-data');
+      expect(reviewDataDir()).toBe(join(outside, 'review-data'));
+    } finally {
+      process.chdir(cwd);
+      await rm(outside, { recursive: true });
+    }
   });
 });

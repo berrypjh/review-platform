@@ -41,12 +41,12 @@ function findWorkspaceRoot(start: string): string {
   return dir;
 }
 
-/** REVIEW_DATA_DIR를 workspace root 기준으로 해석한다. 기본값은 `<workspace>/.review-data`다. */
+/** REVIEW_DATA_DIR를 해석한다. 상대 경로는 workspace root 기준, 절대 경로는 그대로. 기본값은 `<workspace>/.review-data`다. */
 export function reviewDataDir(): string {
-  return resolve(
-    findWorkspaceRoot(process.cwd()),
-    process.env['REVIEW_DATA_DIR'] || '.review-data',
-  );
+  const configured = process.env['REVIEW_DATA_DIR'] || '.review-data';
+  // 절대 경로는 workspace root를 찾지 않는다. 서버리스 번들처럼 pnpm-workspace.yaml이 없는 곳에서도 쓸 수 있다.
+  if (isAbsolute(configured)) return resolve(configured);
+  return resolve(findWorkspaceRoot(process.cwd()), configured);
 }
 
 /** `<dataDir>/runs/<runId>/run.json`을 읽어 VisualRun contract로 검증한다. */
