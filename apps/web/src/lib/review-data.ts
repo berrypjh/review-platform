@@ -45,8 +45,9 @@ function findWorkspaceRoot(start: string): string {
 export function reviewDataDir(): string {
   const configured = process.env['REVIEW_DATA_DIR'] || '.review-data';
   // 절대 경로는 workspace root를 찾지 않는다. 서버리스 번들처럼 pnpm-workspace.yaml이 없는 곳에서도 쓸 수 있다.
-  if (isAbsolute(configured)) return resolve(configured);
-  return resolve(findWorkspaceRoot(process.cwd()), configured);
+  // 데이터는 실행 중에만 읽는다. 번들 tracing 대상에서 뺀다.
+  if (isAbsolute(configured)) return resolve(/*turbopackIgnore: true*/ configured);
+  return resolve(/*turbopackIgnore: true*/ findWorkspaceRoot(process.cwd()), configured);
 }
 
 /** `<dataDir>/runs/<runId>/run.json`을 읽어 VisualRun contract로 검증한다. */
