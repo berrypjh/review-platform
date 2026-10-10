@@ -23,7 +23,7 @@ export async function openTestDatabase({ migrated = true } = {}): Promise<TestDa
   const url = process.env['TEST_DATABASE_URL'];
   if (!url) {
     throw new Error(
-      'TEST_DATABASE_URL is not set. See docs/manual-approval/architecture.md#16-로컬-db',
+      'TEST_DATABASE_URL is not set. See docs/manual-approval/architecture.md#14-로컬-db',
     );
   }
   const config = readDatabaseConfig({ DATABASE_URL: url });
