@@ -1,5 +1,7 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 
+import { tabTo } from './support/keyboard';
+
 // 커밋된 fixture run: fixtures/visual/review-data/runs/sample/run.json
 const RUN = {
   id: 'sample',
@@ -14,15 +16,6 @@ async function expectLoaded(image: Locator) {
   await expect
     .poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
     .toBeGreaterThan(0);
-}
-
-/** target에 focus가 올 때까지 Tab을 누른다. `max`번 안에 도달하지 못하면 실패다. */
-async function tabTo(page: Page, target: Locator, max = 25) {
-  for (let i = 0; i < max; i++) {
-    await page.keyboard.press('Tab');
-    if (await target.evaluate((el) => el === document.activeElement)) return;
-  }
-  throw new Error(`Not reachable with Tab within ${max} presses`);
 }
 
 const changesNav = (page: Page) => page.getByRole('navigation', { name: /Changes/ });
