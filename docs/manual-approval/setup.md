@@ -25,7 +25,7 @@ App 설치 범위와 `GITHUB_ALLOWED_REPOSITORY_IDS` **둘 다에 있는 저장�
 
 ## 1. DB와 배포
 
-- **DB** — 전용 PostgreSQL. 앱용 `DATABASE_URL`은 pooled 연결 문자열, migration은 direct 연결 문자열
+- **DB** — 전용 Neon 프로젝트(무료 플랜, [선정 기록](../records/2026-10-10-neon-for-approval-db.md)). 앱용 `DATABASE_URL`은 Connect의 pooled 연결 문자열, migration은 pooling을 끈 direct 연결 문자열
 - **Vercel** — production 도메인 하나를 `PUBLIC_BASE_URL`로 고정
 
 | Vercel 설정                                        | 값                         |
